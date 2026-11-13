@@ -89,7 +89,7 @@ MONTHS = [
 ]
 
 
-# تحميل وتنظيف جميع البيانات من ملف Excel (6,120 صف × 17 عمود)
+# تحميل وتنظيف جميع البيانات من ملف Excel
 @st.cache_data
 def load_full_excel():
   possible_paths = [
@@ -210,7 +210,6 @@ st.markdown(
 st.sidebar.markdown("## 🎛️ Control Panel")
 st.sidebar.markdown("**Dataset:** NASA POWER (MERRA-2 TS)")
 
-# تم إزالة الإمارات تماماً بناءً على طلبك
 cities_dict = {
     "🌍 إحداثيات عالمية حرة (تغطية الكوكب كله من الرينج)": {"lat": None, "lon": None},
     "🇸🇦 السعودية - جدة (LAT: 21.5, LON: 39.0)": {"lat": 21.5, "lon": 39.0},
