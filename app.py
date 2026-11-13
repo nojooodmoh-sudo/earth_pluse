@@ -7,6 +7,7 @@ import pandas as pd
 from scipy.io import wavfile
 import streamlit as st
 
+# إعدادات الصفحة
 st.set_page_config(
     page_title="EARTH PULSE | NASA Space Apps 2026",
     page_icon="🌍",
@@ -14,6 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# حقن CSS لمطابقة هوية العرض التقديمي (Deep Space Navy + NASA Thermal Palette)
 st.markdown(
     """
     <style>
@@ -87,6 +89,7 @@ MONTHS = [
 ]
 
 
+# تحميل وتنظيف جميع البيانات من ملف Excel (6,120 صف × 17 عمود)
 @st.cache_data
 def load_full_excel():
   possible_paths = [
@@ -104,6 +107,7 @@ def load_full_excel():
     )
     st.stop()
 
+  # تخطي سطور الترويسة التسعة الخاصة بملفات NASA POWER
   df = pd.read_excel(file_path, sheet_name="in", skiprows=9, header=None)
   df.columns = ["PARAMETER", "YEAR", "LAT", "LON"] + MONTHS + ["ANN"]
 
@@ -115,6 +119,7 @@ def load_full_excel():
   df["YEAR"] = df["YEAR"].astype(int)
   df[MONTHS + ["ANN"]] = df[MONTHS + ["ANN"]].replace(-999, np.nan)
 
+  # ترتيب البيانات وحساب التغير السنوي Delta_T لكل موقع جغرافي بشكل مستقل
   df = df.sort_values(["LAT", "LON", "YEAR"]).reset_index(drop=True)
   df["Delta_T"] = df.groupby(["LAT", "LON"])["ANN"].diff()
   return df
@@ -122,16 +127,19 @@ def load_full_excel():
 
 df_all = load_full_excel()
 
-GLOBAL_T_MIN = float(df_all[MONTHS + ["ANN"]].min().min())
-GLOBAL_T_MAX = float(df_all[MONTHS + ["ANN"]].max().max())
+# النطاق الكلي لدرجات الحرارة في قاعدة البيانات بالكامل
+GLOBAL_T_MIN = float(df_all[MONTHS + ["ANN"]].min().min())  # 23.61°C
+GLOBAL_T_MAX = float(df_all[MONTHS + ["ANN"]].max().max())  # 30.49°C
 
 
+# دالة تحويل القيمة الحرارية إلى تردد صوتي (220 Hz - 880 Hz)
 def temp_to_freq(temp_val, t_min=25.15, t_max=29.22):
   f_min, f_max = 220.0, 880.0
   clamped = max(t_min, min(t_max, float(temp_val)))
   return f_min + ((clamped - t_min) / (t_max - t_min)) * (f_max - f_min)
 
 
+# توليد نغمة واحدة للمعدل السنوي
 def generate_annual_audio(temp_val, delta_val):
   sample_rate = 44100
   duration = 2.0
@@ -158,9 +166,10 @@ def generate_annual_audio(temp_val, delta_val):
   return buf.getvalue(), frequency, amplitude
 
 
+# توليد لحن متسلسل يعزف الـ 12 شهراً (JAN -> DEC) للسنة المختارة
 def generate_monthly_sequence_audio(monthly_values):
   sample_rate = 44100
-  note_duration = 0.28
+  note_duration = 0.28  # 0.28 ثانية لكل شهر (المجموع ~3.36 ثانية)
   full_wave = np.array([], dtype=np.float64)
 
   for val in monthly_values:
@@ -184,6 +193,7 @@ def generate_monthly_sequence_audio(monthly_values):
   return buf.getvalue()
 
 
+# --- الهيدر الرئيسي ---
 st.title("🌍 EARTH PULSE")
 st.markdown(
     "#### **Hear the Earth Through NASA Data** | *NASA Space Apps Challenge"
@@ -195,73 +205,26 @@ st.markdown(
     f"""
     <div class="thermal-labels">
         <span>❄️ {GLOBAL_T_MIN:.2f}°C (220 Hz - Cold / Low Pitch)</span>
-        <span>🌐 Global Coverage | 36 Years | 6,120 Records</span>
+        <span>🌐 170 Locations | 36 Years | 6,120 Records</span>
         <span>🔥 {GLOBAL_T_MAX:.2f}°C (880 Hz - Hot / High Pitch)</span>
     </div>
 """,
     unsafe_allow_html=True,
 )
 
+# --- الشريط الجانبي (Control Panel) ---
 st.sidebar.markdown("## 🎛️ Control Panel")
 st.sidebar.markdown("**Dataset:** NASA POWER (MERRA-2 TS)")
 
-cities_dict = {
-    "🌍 إحداثيات عالمية حرة ": {"lat": None, "lon": None},
-    "🇸🇦 السعودية - جدة (LAT: 21.5, LON: 39.0)": {"lat": 21.5, "lon": 39.0},
-    "🇸🇦 السعودية - الرياض (LAT: 24.5, LON: 46.5)": {"lat": 24.5, "lon": 46.5},
-    "🇸🇦 السعودية - مكة المكرمة (LAT: 21.5, LON: 39.5)": {
-        "lat": 21.5,
-        "lon": 39.5,
-    },
-    "🇪🇬 مصر - القاهرة (LAT: 30.0, LON: 31.0)": {"lat": 30.0, "lon": 31.0},
-    "🇺🇸 أمريكا - نيويورك (LAT: 40.5, LON: -74.0)": {"lat": 40.5, "lon": -74.0},
-    "🇬🇧 بريطانيا - لندن (LAT: 51.5, LON: 0.0)": {"lat": 51.5, "lon": 0.0},
-    "🇯🇵 اليابان - طوكيو (LAT: 35.5, LON: 139.5)": {"lat": 35.5, "lon": 139.5},
-}
+lats = sorted(df_all["LAT"].unique())
+lons = sorted(df_all["LON"].unique(), reverse=True)
 
-selected_city_label = st.sidebar.selectbox(
-    "📍 اختر الموقع أو وسيلة الإدخال:", list(cities_dict.keys())
-)
+selected_lat = st.sidebar.selectbox("خط العرض (Latitude °N):", lats, index=0)
+selected_lon = st.sidebar.selectbox("خط الطول (Longitude °W):", lons, index=0)
 
-if "عالمية حرة" in selected_city_label:
-  st.sidebar.markdown("### 🌐 نطاق الكوكب بالكامل")
-  selected_lat = st.sidebar.number_input(
-      "خط العرض (Latitude) - من القطب الجنوبي للشمالي",
-      min_value=-90.0,
-      max_value=90.0,
-      value=21.5,
-      step=0.5,
-      format="%.1f",
-  )
-  selected_lon = st.sidebar.number_input(
-      "خط الطول (Longitude) - الشرق والغرب (يدعم السالب مثل -150)",
-      min_value=-180.0,
-      max_value=180.0,
-      value=39.0,
-      step=0.5,
-      format="%.1f",
-  )
-
-  if not df_all.empty:
-    df_temp = df_all.copy()
-    df_temp["distance"] = (df_temp["LAT"] - selected_lat) ** 2 + (
-        df_temp["LON"] - selected_lon
-    ) ** 2
-    closest_idx = df_temp["distance"].idxmin()
-    matched_lat = df_temp.loc[closest_idx, "LAT"]
-    matched_lon = df_temp.loc[closest_idx, "LON"]
-    st.sidebar.success(f"🎯 المطابقة: ({matched_lat}°N, {matched_lon}°W)")
-  else:
-    matched_lat, matched_lon = selected_lat, selected_lon
-else:
-  matched_lat = cities_dict[selected_city_label]["lat"]
-  matched_lon = cities_dict[selected_city_label]["lon"]
-  st.sidebar.info(
-      f"🌐 الإحداثيات المختارة: LAT ({matched_lat}) | LON ({matched_lon})"
-  )
-
+# تصفية بيانات الموقع المختار (36 سنة)
 df_loc = df_all[
-    (df_all["LAT"] == matched_lat) & (df_all["LON"] == matched_lon)
+    (df_all["LAT"] == selected_lat) & (df_all["LON"] == selected_lon)
 ].copy()
 
 st.sidebar.markdown("---")
@@ -280,216 +243,216 @@ nasa_cmap = mcolors.LinearSegmentedColormap.from_list(
 if mode == "📊 Standard Exploration (الاستكشاف البصري والصوتي)":
   selected_year = st.sidebar.slider("اختر السنة (Year):", 1990, 2025, 2015)
 
-  if not df_loc.empty:
-    row = df_loc[df_loc["YEAR"] == selected_year].iloc[0]
-    ann_temp = row["ANN"]
-    delta_t = row["Delta_T"]
-    monthly_vals = [row[m] for m in MONTHS]
+  row = df_loc[df_loc["YEAR"] == selected_year].iloc[0]
+  ann_temp = row["ANN"]
+  delta_t = row["Delta_T"]
+  monthly_vals = [row[m] for m in MONTHS]
 
-    ann_audio, freq, amp = generate_annual_audio(ann_temp, delta_t)
-    monthly_audio = generate_monthly_sequence_audio(monthly_vals)
+  ann_audio, freq, amp = generate_annual_audio(ann_temp, delta_t)
+  monthly_audio = generate_monthly_sequence_audio(monthly_vals)
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("الموقع المختار", f"{matched_lat}°N, {matched_lon}°W")
-    c2.metric(f"المعدل السنوي ({selected_year})", f"{ann_temp:.2f} °C")
-    delta_str = "N/A (سنة الأساس)" if pd.isna(delta_t) else f"{delta_t:+.2f} °C"
-    c3.metric("التغير السنوي (ΔT)", delta_str)
-    c4.metric("التردد السنوي (Pitch)", f"{freq:.1f} Hz")
+  # بطاقات القياس الرئيسية
+  c1, c2, c3, c4 = st.columns(4)
+  c1.metric("الموقع المختار", f"{selected_lat}°N, {selected_lon}°W")
+  c2.metric(f"المعدل السنوي ({selected_year})", f"{ann_temp:.2f} °C")
+  delta_str = "N/A (سنة الأساس)" if pd.isna(delta_t) else f"{delta_t:+.2f} °C"
+  c3.metric("التغير السنوي (ΔT)", delta_str)
+  c4.metric("التردد السنوي (Pitch)", f"{freq:.1f} Hz")
 
-    st.markdown("### 🔊 Data Sonification Players")
-    aud1, aud2 = st.columns(2)
+  # قسم مشغلات الصوت (السنوي + الشهري)
+  st.markdown("### 🔊 Data Sonification Players")
+  aud1, aud2 = st.columns(2)
 
-    with aud1:
-      st.markdown(
-          f"**1️⃣ النغمة السنوية لعام {selected_year} (Annual Pitch)**"
-      )
-      st.audio(ann_audio, format="audio/wav")
-      st.caption(
-          f"تردد ثابت {freq:.1f} Hz يمثل المتوسط السنوي ({ann_temp:.2f}°C) بشدة"
-          f" صوت {amp:.2f}."
-      )
+  with aud1:
+    st.markdown(f"**1️⃣ النغمة السنوية لعام {selected_year} (Annual Pitch)**")
+    st.audio(ann_audio, format="audio/wav")
+    st.caption(
+        f"تردد ثابت {freq:.1f} Hz يمثل المتوسط السنوي ({ann_temp:.2f}°C) بشدة"
+        f" صوت {amp:.2f}."
+    )
 
-    with aud2:
-      st.markdown(
-          f"**2️⃣ التسلسل الصوتي لـ 12 شهراً ({selected_year} JAN → DEC)**"
-      )
-      st.audio(monthly_audio, format="audio/wav")
-      st.caption(
-          "استمع لتغير درجات الحرارة شهراً بشهر خلال العام كسلسلة نغمات متتابعة."
-      )
-
-    hottest_month = MONTHS[int(np.argmax(monthly_vals))]
-    coldest_month = MONTHS[int(np.argmin(monthly_vals))]
+  with aud2:
     st.markdown(
-        f"""
+        f"**2️⃣ التسلسل الصوتي لـ 12 شهراً ({selected_year} JAN → DEC)**"
+    )
+    st.audio(monthly_audio, format="audio/wav")
+    st.caption(
+        "استمع لتغير درجات الحرارة شهراً بشهر خلال العام كسلسلة نغمات متتابعة."
+    )
+
+  # وصف إمكانية الوصول (WCAG Accessibility)
+  hottest_month = MONTHS[int(np.argmax(monthly_vals))]
+  coldest_month = MONTHS[int(np.argmin(monthly_vals))]
+  st.markdown(
+      f"""
         <div class="info-box">
             <strong>♿ الوصف الصوتي والنصي لإمكانية الوصول (Accessibility Summary):</strong><br>
-            في الإحداثيات <b>({matched_lat}°N, {matched_lon}°W)</b> خلال عام <b>{selected_year}</b>: 
+            في الإحداثيات <b>({selected_lat}°N, {selected_lon}°W)</b> خلال عام <b>{selected_year}</b>: 
             بلغ المتوسط السنوي <b>{ann_temp:.2f}°C</b>. وسُجلت أعلى حرارة شهرية في شهر <b>{hottest_month} ({max(monthly_vals):.2f}°C)</b>، 
             بينما سُجلت أدنى حرارة في شهر <b>{coldest_month} ({min(monthly_vals):.2f}°C)</b>.
         </div>
         """,
-        unsafe_allow_html=True,
+      unsafe_allow_html=True,
+  )
+
+  # الرسوم البيانية التفاعلية (3 تبويبات تغطي كل البيانات)
+  st.markdown("### 📈 NASA Thermal Visualizations")
+  tab1, tab2, tab3 = st.tabs([
+      f"📅 الدورة الشهرية لعام {selected_year} (JAN - DEC)",
+      "🌡️ السلسلة السنوية (1990 - 2025)",
+      "📊 التغير السنوي (Annual ΔT)",
+  ])
+
+  with tab1:
+    fig_m, ax_m = plt.subplots(figsize=(11, 4))
+    fig_m.patch.set_facecolor("#040C18")
+    ax_m.set_facecolor("#0A192F")
+
+    norm_m = plt.Normalize(GLOBAL_T_MIN, GLOBAL_T_MAX)
+    colors_m = [nasa_cmap(norm_m(v)) for v in monthly_vals]
+
+    bars = ax_m.bar(
+        MONTHS, monthly_vals, color=colors_m, edgecolor="#FFFFFF", linewidth=0.5
+    )
+    ax_m.plot(MONTHS, monthly_vals, color="#00D4FF", marker="o", linewidth=2)
+    ax_m.set_ylim(min(monthly_vals) - 0.5, max(monthly_vals) + 0.5)
+    ax_m.set_ylabel("Temperature (°C)", color="#E6F1FF")
+    ax_m.set_title(
+        f"Monthly Skin Temperature Profile — {selected_year} (Lat:"
+        f" {selected_lat}, Lon: {selected_lon})",
+        color="#00D4FF",
+    )
+    ax_m.tick_params(colors="#8892B0")
+    ax_m.grid(True, linestyle=":", alpha=0.2, color="#8892B0")
+    for spine in ax_m.spines.values():
+      spine.set_color("#1E3A5F")
+    st.pyplot(fig_m)
+
+  with tab2:
+    fig1, ax1 = plt.subplots(figsize=(11, 4))
+    fig1.patch.set_facecolor("#040C18")
+    ax1.set_facecolor("#0A192F")
+
+    norm_a = plt.Normalize(df_all["ANN"].min(), df_all["ANN"].max())
+    ax1.plot(
+        df_loc["YEAR"], df_loc["ANN"], color="#1E3A5F", linewidth=2, zorder=1
+    )
+    sc = ax1.scatter(
+        df_loc["YEAR"],
+        df_loc["ANN"],
+        c=df_loc["ANN"],
+        cmap=nasa_cmap,
+        norm=norm_a,
+        s=75,
+        zorder=2,
+        edgecolors="#FFFFFF",
+        linewidth=0.6,
+    )
+    ax1.axvline(x=selected_year, color="#00D4FF", linestyle="--", alpha=0.8)
+    ax1.scatter(
+        [selected_year],
+        [ann_temp],
+        color="#FF2A2A",
+        s=180,
+        zorder=3,
+        edgecolors="#FFFFFF",
+        linewidth=2,
     )
 
-    st.markdown("### 📈 NASA Thermal Visualizations")
-    tab1, tab2, tab3 = st.tabs([
-        f"📅 الدورة الشهرية لعام {selected_year} (JAN - DEC)",
-        "🌡️ السلسلة السنوية (1990 - 2025)",
-        "📊 التغير السنوي (Annual ΔT)",
-    ])
+    ax1.set_ylabel("Annual Mean Temp (°C)", color="#E6F1FF")
+    ax1.set_xlabel("Year (1990 - 2025)", color="#E6F1FF")
+    ax1.tick_params(colors="#8892B0")
+    ax1.grid(True, linestyle=":", alpha=0.2, color="#8892B0")
+    for spine in ax1.spines.values():
+      spine.set_color("#1E3A5F")
 
-    with tab1:
-      fig_m, ax_m = plt.subplots(figsize=(11, 4))
-      fig_m.patch.set_facecolor("#040C18")
-      ax_m.set_facecolor("#0A192F")
+    cbar = plt.colorbar(sc, ax=ax1)
+    cbar.set_label("Temp (°C)", color="#E6F1FF")
+    cbar.ax.yaxis.set_tick_params(color="#8892B0")
+    plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#8892B0")
+    st.pyplot(fig1)
 
-      norm_m = plt.Normalize(GLOBAL_T_MIN, GLOBAL_T_MAX)
-      colors_m = [nasa_cmap(norm_m(v)) for v in monthly_vals]
+  with tab3:
+    fig2, ax2 = plt.subplots(figsize=(11, 4))
+    fig2.patch.set_facecolor("#040C18")
+    ax2.set_facecolor("#0A192F")
 
-      bars = ax_m.bar(
-          MONTHS,
-          monthly_vals,
-          color=colors_m,
-          edgecolor="#FFFFFF",
-          linewidth=0.5,
-      )
-      ax_m.plot(MONTHS, monthly_vals, color="#00D4FF", marker="o", linewidth=2)
-      ax_m.set_ylim(min(monthly_vals) - 0.5, max(monthly_vals) + 0.5)
-      ax_m.set_ylabel("Temperature (°C)", color="#E6F1FF")
-      ax_m.set_title(
-          f"Monthly Skin Temperature Profile — {selected_year} (Lat:"
-          f" {matched_lat}, Lon: {matched_lon})",
-          color="#00D4FF",
-      )
-      ax_m.tick_params(colors="#8892B0")
-      ax_m.grid(True, linestyle=":", alpha=0.2, color="#8892B0")
-      for spine in ax_m.spines.values():
-        spine.set_color("#1E3A5F")
-      st.pyplot(fig_m)
+    df_valid = df_loc.dropna(subset=["Delta_T"])
+    bar_colors = [
+        "#FF5500" if val > 0 else "#00D4FF" for val in df_valid["Delta_T"]
+    ]
+    ax2.bar(
+        df_valid["YEAR"],
+        df_valid["Delta_T"],
+        color=bar_colors,
+        alpha=0.9,
+        width=0.65,
+    )
+    ax2.axhline(0, color="#8892B0", linewidth=1)
+    if selected_year != 1990:
+      ax2.axvline(x=selected_year, color="#FFD166", linestyle="--", alpha=0.9)
 
-    with tab2:
-      fig1, ax1 = plt.subplots(figsize=(11, 4))
-      fig1.patch.set_facecolor("#040C18")
-      ax1.set_facecolor("#0A192F")
+    ax2.set_ylabel("Annual Change ΔT (°C)", color="#E6F1FF")
+    ax2.set_xlabel("Year (1991 - 2025)", color="#E6F1FF")
+    ax2.tick_params(colors="#8892B0")
+    ax2.grid(True, linestyle=":", alpha=0.2, color="#8892B0")
+    for spine in ax2.spines.values():
+      spine.set_color("#1E3A5F")
+    st.pyplot(fig2)
 
-      norm_a = plt.Normalize(df_all["ANN"].min(), df_all["ANN"].max())
-      ax1.plot(
-          df_loc["YEAR"], df_loc["ANN"], color="#1E3A5F", linewidth=2, zorder=1
-      )
-      sc = ax1.scatter(
-          df_loc["YEAR"],
-          df_loc["ANN"],
-          c=df_loc["ANN"],
-          cmap=nasa_cmap,
-          norm=norm_a,
-          s=75,
-          zorder=2,
-          edgecolors="#FFFFFF",
-          linewidth=0.6,
-      )
-      ax1.axvline(x=selected_year, color="#00D4FF", linestyle="--", alpha=0.8)
-      ax1.scatter(
-          [selected_year],
-          [ann_temp],
-          color="#FF2A2A",
-          s=180,
-          zorder=3,
-          edgecolors="#FFFFFF",
-          linewidth=2,
-      )
-
-      ax1.set_ylabel("Annual Mean Temp (°C)", color="#E6F1FF")
-      ax1.set_xlabel("Year (1990 - 2025)", color="#E6F1FF")
-      ax1.tick_params(colors="#8892B0")
-      ax1.grid(True, linestyle=":", alpha=0.2, color="#8892B0")
-      for spine in ax1.spines.values():
-        spine.set_color("#1E3A5F")
-
-      cbar = plt.colorbar(sc, ax=ax1)
-      cbar.set_label("Temp (°C)", color="#E6F1FF")
-      cbar.ax.yaxis.set_tick_params(color="#8892B0")
-      plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#8892B0")
-      st.pyplot(fig1)
-
-    with tab3:
-      fig2, ax2 = plt.subplots(figsize=(11, 4))
-      fig2.patch.set_facecolor("#040C18")
-      ax2.set_facecolor("#0A192F")
-
-      df_valid = df_loc.dropna(subset=["Delta_T"])
-      bar_colors = [
-          "#FF5500" if val > 0 else "#00D4FF" for val in df_valid["Delta_T"]
-      ]
-      ax2.bar(
-          df_valid["YEAR"],
-          df_valid["Delta_T"],
-          color=bar_colors,
-          alpha=0.9,
-          width=0.65,
-      )
-      ax2.axhline(0, color="#8892B0", linewidth=1)
-      if selected_year != 1990:
-        ax2.axvline(x=selected_year, color="#FFD166", linestyle="--", alpha=0.9)
-
-      ax2.set_ylabel("Annual Change ΔT (°C)", color="#E6F1FF")
-      ax2.set_xlabel("Year (1991 - 2025)", color="#E6F1FF")
-      ax2.tick_params(colors="#8892B0")
-      ax2.grid(True, linestyle=":", alpha=0.2, color="#8892B0")
-      for spine in ax2.spines.values():
-        spine.set_color("#1E3A5F")
-      st.pyplot(fig2)
-
-    with st.expander(
-        "📋 استعراض وتحميل جدول البيانات الكامل لهذا الموقع (1990 - 2025)"
-    ):
-      st.dataframe(df_loc, use_container_width=True)
+  # جدول البيانات الخام للموقع المختار مع زر تحميل CSV
+  with st.expander(
+      "📋 استعراض وتحميل جدول البيانات الكامل لهذا الموقع (1990 - 2025)"
+  ):
+    st.dataframe(df_loc, use_container_width=True)
 
 else:
+  # --- وضع الاستماع الأعمى (Blind Listening Mode) ---
   st.subheader("🎧 Blind Listening Challenge (اختبار الاستماع الأعمى)")
   st.markdown(
       """
         <div class="info-box">
-            استمع إلى المقطعين الصوتيين للموقع الجغرافي <b>({lat}°N, {lon}°W)</b> 
-            وحاول تحديد أيهما يمثل أبرد سنة وأيهما يمثل أسخن سنة!
+            استمع إلى المقطعين الصوتيين الخاصين بالموقع الجغرافي المختار <b>({lat}°N, {lon}°W)</b> 
+            وحاول تحديد أيهما يمثل أبرد سنة وأيهما يمثل أسخن سنة في هذا الموقع قبل كشف البيانات!
         </div>
-        """.format(lat=matched_lat, lon=matched_lon),
+        """.format(lat=selected_lat, lon=selected_lon),
       unsafe_allow_html=True,
   )
 
-  if not df_loc.empty:
-    min_row = df_loc.loc[df_loc["ANN"].idxmin()]
-    max_row = df_loc.loc[df_loc["ANN"].idxmax()]
+  min_row = df_loc.loc[df_loc["ANN"].idxmin()]
+  max_row = df_loc.loc[df_loc["ANN"].idxmax()]
 
-    audio_cold, f_cold, _ = generate_annual_audio(
-        min_row["ANN"], min_row["Delta_T"]
-    )
-    audio_hot, f_hot, _ = generate_annual_audio(
-        max_row["ANN"], max_row["Delta_T"]
-    )
+  audio_cold, f_cold, _ = generate_annual_audio(
+      min_row["ANN"], min_row["Delta_T"]
+  )
+  audio_hot, f_hot, _ = generate_annual_audio(
+      max_row["ANN"], max_row["Delta_T"]
+  )
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-      st.markdown("### 🔵 المقطع الصوتي (A)")
-      st.audio(audio_cold, format="audio/wav")
+  col_a, col_b = st.columns(2)
+  with col_a:
+    st.markdown("### 🔵 المقطع الصوتي (A)")
+    st.audio(audio_cold, format="audio/wav")
 
-    with col_b:
-      st.markdown("### 🔴 المقطع الصوتي (B)")
-      st.audio(audio_hot, format="audio/wav")
+  with col_b:
+    st.markdown("### 🔴 المقطع الصوتي (B)")
+    st.audio(audio_hot, format="audio/wav")
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("👁️ كشف البيانات والنتائج (Reveal Data)"):
-      r1, r2 = st.columns(2)
-      with r1:
-        st.info(
-            f"**المقطع (A) يمثل عام {int(min_row['YEAR'])} (الأبرد):**\n- المتوسط:"
-            f" **{min_row['ANN']:.2f}°C**\n- التردد: **{f_cold:.1f} Hz**"
-        )
-      with r2:
-        st.error(
-            f"**المقطع (B) يمثل عام {int(max_row['YEAR'])} (الأسخن):**\n- المتوسط:"
-            f" **{max_row['ANN']:.2f}°C**\n- التردد: **{f_hot:.1f} Hz**"
-        )
+  st.markdown("<br>", unsafe_allow_html=True)
+  with st.expander("👁️ كشف البيانات والنتائج (Reveal Data)"):
+    r1, r2 = st.columns(2)
+    with r1:
+      st.info(
+          f"**المقطع (A) يمثل عام {int(min_row['YEAR'])} (الأبرد في هذا"
+          f" الموقع):**\n- المتوسط السنوي: **{min_row['ANN']:.2f}°C**\n-"
+          f" التردد: **{f_cold:.1f} Hz**"
+      )
+    with r2:
+      st.error(
+          f"**المقطع (B) يمثل عام {int(max_row['YEAR'])} (الأسخن في هذا"
+          f" الموقع):**\n- المتوسط السنوي: **{max_row['ANN']:.2f}°C**\n-"
+          f" التردد: **{f_hot:.1f} Hz**"
+      )
 
 st.markdown("---")
 st.caption(
