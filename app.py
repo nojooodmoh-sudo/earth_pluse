@@ -206,7 +206,7 @@ st.sidebar.markdown("## 🎛️ Control Panel")
 st.sidebar.markdown("**Dataset:** NASA POWER (MERRA-2 TS)")
 
 cities_dict = {
-    "🌍 إحداثيات عالمية حرة (تغطية الكوكب كله من الرينج)": {"lat": None, "lon": None},
+    "🌍 إحداثيات عالمية حرة ": {"lat": None, "lon": None},
     "🇸🇦 السعودية - جدة (LAT: 21.5, LON: 39.0)": {"lat": 21.5, "lon": 39.0},
     "🇸🇦 السعودية - الرياض (LAT: 24.5, LON: 46.5)": {"lat": 24.5, "lon": 46.5},
     "🇸🇦 السعودية - مكة المكرمة (LAT: 21.5, LON: 39.5)": {
